@@ -1,0 +1,29 @@
+name: Daily AI News Digest
+
+on:
+  schedule:
+    # 每天 UTC 01:00 = 北京时间 09:00
+    - cron: '0 1 * * *'
+  workflow_dispatch:  # 允许手动触发测试
+
+jobs:
+  push-digest:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repo
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Run daily AI news script
+        env:
+          LARK_APP_ID: ${{ secrets.LARK_APP_ID }}
+          LARK_APP_SECRET: ${{ secrets.LARK_APP_SECRET }}
+          LARK_USER_OPEN_ID: ${{ secrets.LARK_USER_OPEN_ID }}
+          LLM_PROVIDER: ${{ secrets.LLM_PROVIDER }}
+          LLM_API_KEY: ${{ secrets.LLM_API_KEY }}
+          MAX_DAYS_OLD: ${{ secrets.MAX_DAYS_OLD || '2' }}
+        run: python scripts/daily_ai_news.py
