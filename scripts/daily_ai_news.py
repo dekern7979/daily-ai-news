@@ -176,7 +176,7 @@ def call_gemini(prompt: str) -> str:
 def call_siliconflow(prompt: str) -> str:
     url = "https://api.siliconflow.cn/v1/chat/completions"
     payload = {
-        "model": "deepseek-ai/DeepSeek-V2.5",
+        "model": "deepseek-ai/DeepSeek-V3",
         "messages": [{"role": "user", "content": prompt}],
         "temperature": 0.4,
         "max_tokens": 2048,
