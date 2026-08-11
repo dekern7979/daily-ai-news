@@ -19,7 +19,7 @@ from typing import Any
 
 # ---------- Config ----------
 class Config:
-    LARK_APP_ID: str = os.environ["LARK_APP_ID"]gemini-2.0-flashgemini-2.0-flash
+    LARK_APP_ID: str = os.environ["LARK_APP_ID"]
     LARK_APP_SECRET: str = os.environ["LARK_APP_SECRET"]
     LARK_USER_OPEN_ID: str = os.environ["LARK_USER_OPEN_ID"]
     LLM_PROVIDER: str = os.environ.get("LLM_PROVIDER", "gemini").lower().strip()
