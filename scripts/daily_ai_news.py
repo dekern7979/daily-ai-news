@@ -19,7 +19,7 @@ from typing import Any
 
 # ---------- Config ----------
 class Config:
-    LARK_APP_ID: str = os.environ["LARK_APP_ID"]
+    LARK_APP_ID: str = os.environ["LARK_APP_ID"]gemini-2.0-flashgemini-2.0-flash
     LARK_APP_SECRET: str = os.environ["LARK_APP_SECRET"]
     LARK_USER_OPEN_ID: str = os.environ["LARK_USER_OPEN_ID"]
     LLM_PROVIDER: str = os.environ.get("LLM_PROVIDER", "gemini").lower().strip()
@@ -161,7 +161,7 @@ def build_prompt(articles: list[dict[str, str]]) -> str:
 
 
 def call_gemini(prompt: str) -> str:
-    url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key={Config.LLM_API_KEY}"
+    url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-3.5-flash:generateContent?key={Config.LLM_API_KEY}"
     payload = {
         "contents": [{"role": "user", "parts": [{"text": prompt}]}],
         "generationConfig": {"temperature": 0.4, "maxOutputTokens": 2048},
