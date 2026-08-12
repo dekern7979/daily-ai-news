@@ -253,12 +253,15 @@ def get_lark_token() -> str:
 
 
 def send_lark_post(token: str, content: str, title: str = None) -> dict[str, Any]:
-    """Send a Feishu 'post' message (renders as Markdown card) to a user via P2P."""
+    """Send a Feishu 'post' message (renders as Markdown card) to a user via P2P.
+
+    Feishu post msg_type requires content wrapped as {"zh_cn": {"title": ..., "content": [[...]]}}
+    """
     url = "https://open.feishu.cn/open-apis/im/v1/messages"
     params = urllib.parse.urlencode({"receive_id_type": "open_id"})
     full_url = f"{url}?{params}"
 
-    # 飞书 post 格式: zh_cn.title + content (二维数组) + 摘要
+    # 飞书 post 格式: zh_cn.title + content (二维数组)
     lines = content.split("\n")
     content_blocks: list[list[dict[str, Any]]] = []
     current_block: list[dict[str, Any]] = []
@@ -279,9 +282,12 @@ def send_lark_post(token: str, content: str, title: str = None) -> dict[str, Any
     if not content_blocks:
         content_blocks = [[[{"tag": "text", "text": content[:4000]}]]]
 
+    # **关键修复**: post 格式必须用 zh_cn 包裹
     post_payload: dict[str, Any] = {
-        "title": title or "AI 新闻日报推送",
-        "content": content_blocks,
+        "zh_cn": {
+            "title": title or "AI 新闻日报推送",
+            "content": content_blocks,
+        }
     }
 
     payload = {
@@ -300,19 +306,16 @@ def send_lark_post(token: str, content: str, title: str = None) -> dict[str, Any
         return json.loads(resp.read().decode("utf-8"))
 
 
-def send_lark_markdown_fallback(token: str, content: str, title: str = None) -> dict[str, Any]:
-    """Fallback: use msg_type=post with a single markdown element block.
-    Used if the line-based post format fails for some reason."""
+def send_lark_text(token: str, content: str) -> dict[str, Any]:
+    """Fallback: send as plain markdown text (renders as text with markdown rendering).
+    This is what lark-cli --markdown uses internally."""
     url = "https://open.feishu.cn/open-apis/im/v1/messages"
     params = urllib.parse.urlencode({"receive_id_type": "open_id"})
     full_url = f"{url}?{params}"
     payload = {
         "receive_id": Config.LARK_USER_OPEN_ID,
-        "msg_type": "post",
-        "content": json.dumps({
-            "title": title or "AI 新闻日报推送",
-            "content": [[[{"tag": "text", "text": content[:4000]}]]]
-        }, ensure_ascii=False),
+        "msg_type": "text",
+        "content": json.dumps({"text": content[:4000]}, ensure_ascii=False),
     }
     headers = {"Authorization": f"Bearer {token}"}
     req = urllib.request.Request(
@@ -378,8 +381,8 @@ def main() -> None:
     try:
         result = send_lark_post(token, digest, title=title)
     except Exception as e:
-        print(f"[WARN] post format failed: {e}, falling back", file=sys.stderr)
-        result = send_lark_markdown_fallback(token, digest, title=title)
+        print(f"[WARN] post format failed: {e}, falling back to text", file=sys.stderr)
+        result = send_lark_text(token, digest)
     print(json.dumps(result, ensure_ascii=False, indent=2))
 
     if result.get("code") != 0:
