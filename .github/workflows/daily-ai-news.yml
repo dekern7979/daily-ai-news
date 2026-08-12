@@ -9,6 +9,8 @@ on:
 jobs:
   push-digest:
     runs-on: ubuntu-latest
+    permissions:
+      contents: write  # 允许 commit
     steps:
       - name: Checkout repo
         uses: actions/checkout@v4
@@ -27,3 +29,15 @@ jobs:
           LLM_API_KEY: ${{ secrets.LLM_API_KEY }}
           MAX_DAYS_OLD: ${{ secrets.MAX_DAYS_OLD || '2' }}
         run: python scripts/daily_ai_news.py
+
+      - name: Commit digest back to repo
+        run: |
+          git config user.name "daily-ai-news-bot"
+          git config user.email "bot@dekern7979.github.io"
+          git add daily_ai_news_*.md || true
+          if git diff --cached --quiet; then
+            echo "No changes to commit."
+          else
+            git commit -m "chore: auto daily AI news digest ($(date -u +%Y-%m-%d))"
+            git push
+          fi
