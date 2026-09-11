@@ -18,12 +18,54 @@ from typing import Any
 
 
 # ---------- Config ----------
+# 默认 LLM：DeepSeek V4.1 Flash（官方 API 模型名 deepseek-flash）
+DEFAULT_PROVIDER = "deepseek"
+
+# 各 provider 的默认接口地址 / 模型名 / 采样参数（均可用 LLM_BASE_URL、LLM_MODEL 覆盖）
+PROVIDER_DEFAULTS: dict[str, dict[str, Any]] = {
+    # DeepSeek 官方 API（OpenAI 兼容）：deepseek-flash 即 DeepSeek-V4.1-Flash
+    "deepseek": {
+        "base_url": "https://api.deepseek.com",
+        "model": "deepseek-flash",
+        "temperature": 1.0,
+        "top_p": 0.95,
+    },
+    # TokenRouter 聚合网关
+    "tokenrouter": {
+        "base_url": "https://api.tokenrouter.com/v1",
+        "model": "deepseek/deepseek-v4.1-flash",
+        "temperature": 1.0,
+        "top_p": 0.95,
+    },
+    # OpenRouter
+    "openrouter": {
+        "base_url": "https://openrouter.ai/api/v1",
+        "model": "deepseek/deepseek-v4.1-flash",
+        "temperature": 1.0,
+        "top_p": 0.95,
+    },
+    # SiliconFlow（兼容旧配置，默认模型沿用 DeepSeek-V3）
+    "siliconflow": {
+        "base_url": "https://api.siliconflow.cn/v1",
+        "model": "deepseek-ai/DeepSeek-V3",
+        "temperature": 0.4,
+        "top_p": 0.95,
+    },
+}
+
+GEMINI_DEFAULT_MODEL = "gemini-3.5-flash"
+
+
 class Config:
     LARK_APP_ID: str = os.environ["LARK_APP_ID"]
     LARK_APP_SECRET: str = os.environ["LARK_APP_SECRET"]
     LARK_USER_OPEN_ID: str = os.environ["LARK_USER_OPEN_ID"]
-    LLM_PROVIDER: str = os.environ.get("LLM_PROVIDER", "gemini").lower().strip()
+    # LLM_PROVIDER 未设置或为空时，默认走 DeepSeek V4.1 Flash
+    LLM_PROVIDER: str = (os.environ.get("LLM_PROVIDER") or DEFAULT_PROVIDER).lower().strip()
     LLM_API_KEY: str = os.environ["LLM_API_KEY"]
+    # 可选：覆盖所选 provider 的默认接口地址与模型名
+    LLM_BASE_URL: str = (os.environ.get("LLM_BASE_URL") or "").strip()
+    LLM_MODEL: str = (os.environ.get("LLM_MODEL") or "").strip()
     MAX_DAYS_OLD: int = int(os.environ.get("MAX_DAYS_OLD", "2"))
     TOPIC_FOCUS: list[str] = [
         # 英文核心关键词
@@ -197,7 +239,8 @@ def build_prompt(articles: list[dict[str, str]], today_str: str) -> str:
 
 
 def call_gemini(prompt: str) -> str:
-    url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-3.5-flash:generateContent?key={Config.LLM_API_KEY}"
+    model = Config.LLM_MODEL or GEMINI_DEFAULT_MODEL
+    url = f"https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent?key={Config.LLM_API_KEY}"
     payload = {
         "contents": [{"role": "user", "parts": [{"text": prompt}]}],
         "generationConfig": {
@@ -217,30 +260,60 @@ def call_gemini(prompt: str) -> str:
         raise RuntimeError(f"Gemini response parse error: {e}\n{json.dumps(resp, ensure_ascii=False)}")
 
 
-def call_siliconflow(prompt: str) -> str:
-    url = "https://api.siliconflow.cn/v1/chat/completions"
+def call_openai_compatible(prompt: str, base_url: str, model: str,
+                           temperature: float = 0.4, top_p: float = 0.95) -> str:
+    """通用 OpenAI 兼容接口调用，覆盖 DeepSeek / TokenRouter / OpenRouter / SiliconFlow。"""
+    url = base_url.rstrip("/") + "/chat/completions"
     payload = {
-        "model": "deepseek-ai/DeepSeek-V3",
+        "model": model,
         "messages": [{"role": "user", "content": prompt}],
-        "temperature": 0.4,
+        "temperature": temperature,
+        "top_p": top_p,
         "max_tokens": 4096,
+        "stream": False,
     }
     headers = {"Authorization": f"Bearer {Config.LLM_API_KEY}"}
-    resp = http_post(url, payload, headers, timeout=90)
+    resp = http_post(url, payload, headers, timeout=120)
     try:
-        return resp["choices"][0]["message"]["content"]
+        message = resp["choices"][0]["message"]
     except (KeyError, IndexError) as e:
-        raise RuntimeError(f"SiliconFlow response parse error: {e}\n{json.dumps(resp, ensure_ascii=False)}")
+        raise RuntimeError(f"{model} response parse error: {e}\n{json.dumps(resp, ensure_ascii=False)[:2000]}")
+    # 去掉可能存在的 ```markdown ``` 包装
+    text = (message.get("content") or "").strip()
+    text = re.sub(r"^```(?:markdown|md)?\s*\n", "", text)
+    text = re.sub(r"\n```\s*$", "", text.strip())
+    if not text:
+        # 推理型模型可能只返回 reasoning_content，兜底
+        text = (message.get("reasoning_content") or "").strip()
+    if not text:
+        raise RuntimeError(f"{model} returned empty content: {json.dumps(resp, ensure_ascii=False)[:2000]}")
+    return text
+
+
+def call_siliconflow(prompt: str) -> str:
+    d = PROVIDER_DEFAULTS["siliconflow"]
+    return call_openai_compatible(prompt, d["base_url"], Config.LLM_MODEL or d["model"],
+                                 d["temperature"], d["top_p"])
 
 
 def summarize(articles: list[dict[str, str]], today_str: str) -> str:
     prompt = build_prompt(articles, today_str)
-    if Config.LLM_PROVIDER == "gemini":
+    provider = Config.LLM_PROVIDER
+    if provider == "gemini":
         return call_gemini(prompt)
-    elif Config.LLM_PROVIDER == "siliconflow":
-        return call_siliconflow(prompt)
-    else:
-        raise ValueError(f"Unsupported LLM_PROVIDER: {Config.LLM_PROVIDER}")
+    if provider in PROVIDER_DEFAULTS:
+        d = PROVIDER_DEFAULTS[provider]
+        return call_openai_compatible(
+            prompt,
+            Config.LLM_BASE_URL or d["base_url"],
+            Config.LLM_MODEL or d["model"],
+            d["temperature"],
+            d["top_p"],
+        )
+    raise ValueError(
+        f"Unsupported LLM_PROVIDER: {provider} "
+        f"(supported: gemini, {', '.join(PROVIDER_DEFAULTS)})"
+    )
 
 
 # ---------- Lark / Feishu ----------
@@ -261,7 +334,8 @@ def send_lark_post(token: str, content: str, title: str = None) -> dict[str, Any
     params = urllib.parse.urlencode({"receive_id_type": "open_id"})
     full_url = f"{url}?{params}"
 
-    # 飞书 post 格式: zh_cn.title + content (二维数组)
+    # 飞书 post 格式: zh_cn.title + content（二维数组：段落 -> 段落内的行内元素）
+    # 注意：必须是二维，元素直接是 {"tag": "text", ...}，多套一层数组会被飞书拒绝（400）
     lines = content.split("\n")
     content_blocks: list[list[dict[str, Any]]] = []
     current_block: list[dict[str, Any]] = []
@@ -273,14 +347,14 @@ def send_lark_post(token: str, content: str, title: str = None) -> dict[str, Any
                 content_blocks.append(current_block)
                 current_block = []
         else:
-            current_block.append([{"tag": "text", "text": line}])
+            current_block.append({"tag": "text", "text": line})
 
     if current_block:
         content_blocks.append(current_block)
 
     # 兜底：至少有一个块
     if not content_blocks:
-        content_blocks = [[[{"tag": "text", "text": content[:4000]}]]]
+        content_blocks = [[{"tag": "text", "text": content[:4000]}]]
 
     # **关键修复**: post 格式必须用 zh_cn 包裹
     post_payload: dict[str, Any] = {
@@ -362,7 +436,10 @@ def main() -> None:
     if not filtered:
         raise RuntimeError("No articles available to summarize.")
 
-    print("[INFO] Summarizing with LLM...")
+    active_model = Config.LLM_MODEL or PROVIDER_DEFAULTS.get(
+        Config.LLM_PROVIDER, {"model": GEMINI_DEFAULT_MODEL}
+    )["model"]
+    print(f"[INFO] Summarizing with LLM... provider={Config.LLM_PROVIDER} model={active_model}")
     digest = summarize(filtered[:30], today_str)
     print(f"[INFO] Digest length: {len(digest)} chars")
     print("=" * 60)
