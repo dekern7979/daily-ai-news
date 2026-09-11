@@ -18,9 +18,11 @@
    - `App ID`
    - `App Secret`
    - 目标用户的 `open_id`
-3. 一个免费的 LLM API Key（二选一）：
-   - **Gemini 2.0 Flash**（推荐，1500 次/天）：https://aistudio.google.com/app/apikey
+3. 一个 LLM API Key（默认走 DeepSeek，也可切换其他）：
+   - **DeepSeek 官方 API（默认）**：`https://api.deepseek.com`，模型名 `deepseek-flash`（即 DeepSeek-V4.1-Flash），https://platform.deepseek.com/
+   - **Gemini**（1500 次/天免费）：https://aistudio.google.com/app/apikey
    - **SiliconFlow**：https://cloud.siliconflow.cn/
+   - **TokenRouter / OpenRouter**：聚合网关，也可直接用
 
 ## 部署步骤
 
@@ -44,9 +46,15 @@ git push -u origin main
 | `LARK_APP_ID` | 飞书应用 App ID，例如 `cli_aad6da804078dbe3` |
 | `LARK_APP_SECRET` | 飞书应用 App Secret |
 | `LARK_USER_OPEN_ID` | 接收消息用户的 open_id，例如 `ou_3d9c71e74c4aa75d95aab3971e7b645c` |
-| `LLM_PROVIDER` | 填 `gemini` 或 `siliconflow` |
+| `LLM_PROVIDER` | `deepseek`（默认，留空即走它）/ `gemini` / `siliconflow` / `tokenrouter` / `openrouter` |
 | `LLM_API_KEY` | 对应 LLM 平台的 API Key |
+| `LLM_BASE_URL`（可选） | 覆盖接口地址，例如 `https://api.deepseek.com` |
+| `LLM_MODEL`（可选） | 覆盖模型名，例如 `deepseek-flash` |
 | `MAX_DAYS_OLD`（可选） | 只汇总 N 天内的新闻，默认 `2` |
+
+> **默认模型**：`LLM_PROVIDER` 未设置或为空时，脚本默认调用 **DeepSeek V4.1 Flash**
+> （`https://api.deepseek.com` + 模型名 `deepseek-flash`）。
+> 此时 `LLM_API_KEY` 需填 DeepSeek 官方 API Key。
 
 ### 3. 手动触发测试
 
