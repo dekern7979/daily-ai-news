@@ -27,6 +27,9 @@ jobs:
           LARK_USER_OPEN_ID: ${{ secrets.LARK_USER_OPEN_ID }}
           LLM_PROVIDER: ${{ secrets.LLM_PROVIDER }}
           LLM_API_KEY: ${{ secrets.LLM_API_KEY }}
+          # 可选：覆盖 provider 的默认接口地址 / 模型名
+          LLM_BASE_URL: ${{ secrets.LLM_BASE_URL }}
+          LLM_MODEL: ${{ secrets.LLM_MODEL }}
           MAX_DAYS_OLD: ${{ secrets.MAX_DAYS_OLD || '2' }}
         run: python scripts/daily_ai_news.py
 
