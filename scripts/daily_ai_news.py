@@ -10,6 +10,8 @@ import json
 import os
 import re
 import sys
+import time
+import urllib.error
 import urllib.parse
 import urllib.request
 import xml.etree.ElementTree as ET
@@ -112,9 +114,29 @@ def http_post(url: str, data: dict[str, Any], headers: dict[str, str] | None = N
     req_headers = {"Content-Type": "application/json"}
     if headers:
         req_headers.update(headers)
-    req = urllib.request.Request(url, data=payload, headers=req_headers, method="POST")
-    with urllib.request.urlopen(req, timeout=timeout) as resp:
-        return json.loads(resp.read().decode("utf-8"))
+    # 429/5xx 与网络错误自动重试（Gemini 偶发 503、飞书偶发抖动），退避 5s/15s/30s
+    delays = (5, 15, 30)
+    last_exc: Exception | None = None
+    for attempt in range(len(delays) + 1):
+        req = urllib.request.Request(url, data=payload, headers=req_headers, method="POST")
+        try:
+            with urllib.request.urlopen(req, timeout=timeout) as resp:
+                return json.loads(resp.read().decode("utf-8"))
+        except urllib.error.HTTPError as e:
+            last_exc = e
+            if e.code not in (429, 500, 502, 503, 504) or attempt >= len(delays):
+                raise
+            wait = delays[attempt]
+            print(f"[WARN] http_post HTTP {e.code}, attempt {attempt + 1}, retry in {wait}s", file=sys.stderr)
+            time.sleep(wait)
+        except (urllib.error.URLError, TimeoutError, OSError) as e:
+            last_exc = e
+            if attempt >= len(delays):
+                raise
+            wait = delays[attempt]
+            print(f"[WARN] http_post network error, attempt {attempt + 1}, retry in {wait}s: {e}", file=sys.stderr)
+            time.sleep(wait)
+    raise last_exc  # pragma: no cover
 
 
 # ---------- RSS parsing ----------
